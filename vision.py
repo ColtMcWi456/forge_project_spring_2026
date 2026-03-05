@@ -14,11 +14,18 @@ class CameraVision:
 
     def connect(self):
         """Connect to the camera."""
+         import cv2
+        self.camera = cv2.VideoCapture(self.camera_id)
+        if not self.camera.isopened():
+            raise RuntimeError(f"Could not open camera with ID {self.camera_id}")
         pass
 
     def capture_frame(self):
         """Capture a single image frame from the camera."""
-        pass
+        ret, frame = self.camera.read()
+        if not ret:
+            raise RuntimeError("Failed to capture frame from camera")
+        return frame
 
     def preprocess(self, frame):
         """Clean/normalize the image before parsing."""
@@ -45,4 +52,5 @@ class CameraVision:
 
     def release(self):
         """Disconnect camera safely."""
-        pass
+        if self.camera is not None:
+            self.camera.release()
