@@ -14,7 +14,7 @@ class CameraVision:
 
     def connect(self):
         """Connect to the camera."""
-         import cv2
+        import cv2
         self.camera = cv2.VideoCapture(self.camera_id)
         if not self.camera.isopened():
             raise RuntimeError(f"Could not open camera with ID {self.camera_id}")

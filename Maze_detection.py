@@ -88,19 +88,6 @@ def detect_colored_corners(image_path):
         print(f"Error: Found {len(corner_points)} corners instead of 4. Adjust your color mask.")
         return None, original_image
 
-# --- Example Usage ---
-corners, result_image = detect_colored_corners('Maze_tilt.png')
-
-if corners is not None:
-    print("Ordered Corner Coordinates:\n", corners)
-    cv2.imshow("Detected Corners", result_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-cv2.imwrite('Edged.png', result_image)
-
-
-
-
 def calculate_angle(p1,p2):
     """ Calculates the angle between a vector created by two points
     and the x axis"""
@@ -117,8 +104,6 @@ def calculate_angle(p1,p2):
     angle_rad = math.acos(cos_theta)
     angle_deg = math.degrees(angle_rad)
     return angle_deg
-
-angle = calculate_angle(corners[0],corners[1])
 
 def normalize_img_angle(img,angle):
     """Takes an image and the angle it is canted off of the origin and rotates
@@ -137,33 +122,21 @@ def normalize_img_angle(img,angle):
     rotated_image.save("Maze_straightened.png")
     
     # Display the image (optional)
-    rotated_image.show()
-
-normalize_img_angle('Maze_tilt.png',angle) # Need to rotate coordinates too
-
-corners, result_image = detect_colored_corners('Maze_straightened.png')
-
-print("Ordered Corner Coordinates:\n", corners)
-cv2.imshow("Detected Corners", result_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-cv2.imwrite('Edged.png', result_image)
-
-
+    #rotated_image.show()
 
 def find_chunk_centers(corners,chunk_num):
     """ Find the center of each chunk based on maze corners and number of chunks """
     maze_size = float(corners[1][0] - corners[0][0])
     chunk_size = maze_size/chunk_num
 
-    chunk_centers = []
+    chunk_centers = [[] for _ in range(chunk_num)]
 
     for i in range(chunk_num):
         x = corners[0][0] + chunk_size/2
         y = corners[0][1] + chunk_size/2+chunk_size*i
         for j in range(chunk_num):
             x = corners[0][0] + chunk_size/2+chunk_size*j
-            chunk_centers.append([float(x),float(y)])
+            chunk_centers[i].append([int(x),int(y)])
 
     return chunk_centers
 
@@ -174,24 +147,175 @@ def find_chunk_corners(center,corners,chunk_num):
     maze_size = float(corners[1][0] - corners[0][0])
     dist = (maze_size/chunk_num)/2
 
-    tl = [float(center[0]-dist),float(center[1]-dist)]
-    tr = [float(center[0]+dist),float(center[1]-dist)]
-    bl = [float(center[0]-dist),float(center[1]+dist)]
-    br = [float(center[0]+dist),float(center[1]+dist)]
+    tl = [int(center[0]-dist),int(center[1]-dist)]
+    tr = [int(center[0]+dist),int(center[1]-dist)]
+    bl = [int(center[0]-dist),int(center[1]+dist)]
+    br = [int(center[0]+dist),int(center[1]+dist)]
 
     # Top left, top right, bottom left, bottom right
     return [tl,tr,bl,br]
 
-pts = np.array(find_chunk_centers(corners,6))
+def find_start_end(center_points, image):
+    """ Finds the start and end points of the maze based on color of space """
+    start = None
+    end = None
 
-corners = find_chunk_corners(pts[0],corners,6)
-corners
+    for i in range(len(center_points)):
+        for j in range(len(center_points[i])):
+            if (image[center_points[i][j][1], center_points[i][j][0]][1] > image[center_points[i][j][1], center_points[i][j][0]][2]) and (image[center_points[i][j][1], center_points[i][j][0]][1] > image[center_points[i][j][1], center_points[i][j][0]][0]):
+                start = center_points[i][j]
+            elif (image[center_points[i][j][0], center_points[i][j][1]][0] > image[center_points[i][j][0], center_points[i][j][1]][1]) and (image[center_points[i][j][0], center_points[i][j][1]][0] > image[center_points[i][j][0], center_points[i][j][1]][2]):
+                end = center_points[i][j]
+    return start, end
 
+def is_wall(point, center_points, direction, image):
+    """ Determines if a point is a wall or path based on the color of the space """
+    for i in range(len(center_points)):
+        for j in range(len(center_points[i])):
+            if center_points[i][j] == point:
+                index_i = i
+                index_j = j
+
+    if direction == 'up':
+        new_index_i -= 1
+        new_index_j = index_j
+
+        if new_index_i < 0:
+            return True
+
+        distance = abs(center_points[new_index_i][new_index_j][0] - center_points[index_i][index_j][0]) + abs(center_points[new_index_i][new_index_j][1] - center_points[index_i][index_j][1])
+
+        for i in range(distance):
+            if image[point[1]-i, point[0]].mean() < 0.5: 
+                return True
+
+    elif direction == 'down':
+        new_index_i += 1
+        new_index_j = index_j
+
+        if new_index_i >= len(center_points):
+            return True
+
+        distance = abs(center_points[new_index_i][new_index_j][0] - center_points[index_i][index_j][0]) + abs(center_points[new_index_i][new_index_j][1] - center_points[index_i][index_j][1])
+
+        for i in range(distance):
+            if image[point[1]+i, point[0]].mean() < 0.5: 
+                return True
+            
+    elif direction == 'left':
+        new_index_i = index_i
+        new_index_j -= 1
+
+        if new_index_j < 0:
+            return True
+
+        distance = abs(center_points[new_index_i][new_index_j][0] - center_points[index_i][index_j][0]) + abs(center_points[new_index_i][new_index_j][1] - center_points[index_i][index_j][1])
+
+        for i in range(distance):
+            if image[point[1], point[0]-i].mean() < 0.5: 
+                return True
+            
+    else: # direction == 'right'
+        new_index_i = index_i
+        new_index_j += 1
+
+        if new_index_j >= len(center_points[0]):
+            return True
+
+        distance = abs(center_points[new_index_i][new_index_j][0] - center_points[index_i][index_j][0]) + abs(center_points[new_index_i][new_index_j][1] - center_points[index_i][index_j][1])
+
+        for i in range(distance):
+            if image[point[1], point[0]+i].mean() < 0.5: 
+                return True
+    
+    return False
+
+def BFS(start, end, center_points, image):
+    """ Breadth First Search to find the path from start to end """
+    queue = [start]
+    visited = set()
+    parent_map = {}
+
+    while queue:
+        current = queue.pop(0)
+
+        if current == end:
+            # Reconstruct path
+            path = []
+            while current in parent_map:
+                path.append(current)
+                current = parent_map[current]
+            path.append(start)
+            return path[::-1]  # Return reversed path
+
+        visited.add(tuple(current))
+
+        for direction in ['up', 'down', 'left', 'right']:
+            if not is_wall(current, center_points, direction, image):
+                # Get the new point based on direction
+                if direction == 'up':
+                    new_point = [current[0], current[1] - 1]
+                elif direction == 'down':
+                    new_point = [current[0], current[1] + 1]
+                elif direction == 'left':
+                    new_point = [current[0] - 1, current[1]]
+                else:  # right
+                    new_point = [current[0] + 1, current[1]]
+
+                if tuple(new_point) not in visited and new_point not in queue:
+                    queue.append(new_point)
+                    parent_map[tuple(new_point)] = current
+
+    # Find Path
+
+
+    return None
+
+# --- Example Usage ---
+corners, result_image = detect_colored_corners('maze_marked_up.png')
+
+"""
+if corners is not None:
+    print("Ordered Corner Coordinates:\n", corners)
+    cv2.imshow("Detected Corners", result_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+cv2.imwrite('Edged.png', result_image)
+"""
+
+angle = calculate_angle(corners[0],corners[1])
+
+normalize_img_angle('maze_marked_up.png',angle) # Need to rotate coordinates too
+
+corners, result_image = detect_colored_corners('Maze_straightened.png')
+
+"""
+print("Ordered Corner Coordinates:\n", corners)
+cv2.imshow("Detected Corners", result_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+cv2.imwrite('Edged.png', result_image)
+"""
+
+center_pts = find_chunk_centers(corners,8)
+
+#corners = find_chunk_corners(center_pts[0],corners,8)
 
 img = mpimg.imread('Maze_straightened.png')
 plt.imshow(img)
 
+start, end = find_start_end(center_pts, img)
 
-# Draw points at coordinates (100, 150) and (200, 250)
-plt.scatter(pts[:, 0], pts[:, 1], c='red', s=40) # s is marker size
+print("Start:", start)
+print("End:", end)
+
+path = BFS(start, end, center_pts, img)
+
+# for i in range(len(center_pts)):
+#     for j in range(len(center_pts[i])):
+#         plt.scatter(center_pts[i][j][0], center_pts[i][j][1], c='blue', s=40)
+plt.scatter(start[0], start[1], c='green', s=100)
+plt.scatter(end[0], end[1], c='red', s=100)
+for i in range(len(path)):
+    plt.scatter(path[i][0], path[i][1], c='yellow', s=50)
 plt.show()
